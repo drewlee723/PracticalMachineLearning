@@ -1,0 +1,246 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Seok Joon Lee"
+date: '2019/3/31 '
+output:  
+  html_document: default
+  word_document:
+    keep_md: yes
+  pdf_document: 
+    keep_md: yes
+  fig_caption: yes
+  fig_height: 3
+  fig_width: 4
+ 
+---
+
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it, even though it potentially provides useful information for a large variety of applications,such as sports training.
+
+In this project, the goal was to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 young health participants. They were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in 5 different fashions: 
+*exactly according to the specification (Class A)
+*throwing the elbows to the front (Class B)
+*lifting the dumbbell only halfway (Class C)
+*lowering the dumbbell only halfway (Class D) 
+*throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Aim of this project was to predict the manner in which they did the exercise. (This is the "classe" variable.)
+
+Below is a report explaining ...
+*how the model was built
+*how cross validation was used
+<what you think the expected out of sample error is>, 
+<why you made the choices you did>
+
+and prediction of 20 different test cases using the prediction model. 
+
+
+
+#Data sources
+
+The training data for this project are available here:
+[website](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+The test data are available here:
+[website](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+The data for this project come from this source: [website](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har)
+
+Full source:
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf). *Proceedings of 4th Augmented Human (AH) International Conference in cooperation with ACM SIGCHI* (Augmented Human'13). Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Special thanks to the above mentioned authors for being so generous in allowing their data to be used for individuals in this kind of courses.
+
+
+
+#Reproducibility
+
+In order to reproduce the same results, load the R libraries below which are necessary for the analysis, and set a pseduo-random seed same as the one I used.
+
+```{r}
+library(caret)
+library(corrplot)
+library(rattle)
+set.seed(19331)
+```
+
+
+
+#Getting data
+
+Read the training data and replace empty values by NA, and identify set column name differences.
+
+```{r read data, cache=TRUE, warning=FALSE, message=FALSE}
+url_training <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+url_testing <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+download.file(url = url_training, destfile = 'data_train.csv', method="curl")
+download.file(url = url_testing, destfile = 'data_test.csv', method="curl")
+train_raw <- read.csv(file = 'data_train.csv',
+                      na.strings = c('NA','#DIV/0!',''), header=TRUE)
+test_raw <- read.csv(file = 'data_test.csv',
+                     na.strings = c('NA','#DIV/0!',''), header=TRUE)
+#Identify set column name differences
+setdiff(names(train_raw), names(train_raw))
+setdiff(names(test_raw), names(test_raw))
+```
+
+Verified that the schema of both the training and testing sets are identical, excluding the final column representing the A-E class.
+
+
+
+#Cross Validation
+The training dataset is then partinioned in 2 to create a Training set (75% of the data, = training) for the modeling process and a Test set (with the remaining 25%, = testing) for the validations. The testing dataset(= test_raw) is not changed and will only be used for the quiz results generation.
+
+```{r, message=FALSE}
+inTrain  <- createDataPartition(train_raw$classe, p=0.75, list=FALSE)
+training <- train_raw[inTrain, ]
+testing  <- train_raw[-inTrain, ]
+dim(training); dim(testing)
+```
+
+
+
+#Exploratory Data Analysis, and Cleaning
+
+Exploratory Data Analysis reveals datasets have 160 variables, and that the first 7 fields of the data are non-predictive(`r names(training[,1:7])`). Also, the data contains a large number of NA values (`r round(sum(is.na(training))/prod(dim(training))*100)`% of the data) because many of the variables contain periodic descriptive statistics of other variables. Non-predictive variables and independent variables with more than 90% of NA values are removed from the data set. This will not influence the error rate of the prediction model since these are summary statistics that highly correlate with the other data. 
+
+```{r remove NA, cache=TRUE, warning=FALSE, message=FALSE}
+#Remove non-predictive variables.
+training <- training[,-1:-7]
+testing <- testing[,-1:-7]
+
+#Remove variables with Nearly Zero Variance
+NZV <- nearZeroVar(training)
+training <- training[, -NZV]
+NZV <- nearZeroVar(testing)
+testing <- testing[, -NZV]
+
+#Remove variables with missing data >90%
+round(sum(is.na(training))/prod(dim(training))*100)
+count_nas <- apply(training, 2, function(var){
+  sum(is.na(var))/length(var)*100
+})
+training <- training[-which(count_nas>90)]
+round(sum(is.na(training))/prod(dim(training))*100)
+round(sum(is.na(testing))/prod(dim(testing))*100)
+count_nas <- apply(testing, 2, function(var){
+  sum(is.na(var))/length(var)*100
+})
+testing <- testing[-which(count_nas>90)]
+round(sum(is.na(testing))/prod(dim(testing))*100)
+
+#check if same variables are left
+setdiff(names(training), names(testing))
+setdiff(names(testing), names(training))
+
+# check dimensions
+dim(training); dim(testing)
+#[1] 14718    53
+#[1] 4904   53
+```
+
+With the cleaning process above, the number of variables for the analysis has been reduced to 53 only.
+This leaves `r round(sum(is.na(training))/prod(dim(training))*100)`% of the data with NA values.
+
+
+#Correlation Analysis
+A correlation among variables is analysed before proceeding to the modeling procedures.
+```{r, echo=FALSE}
+corMatrix <- cor(training[, -53])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+Variables with high correlation are shown in dark colors in the graph above. As seen in the graph, correlations are quite low, thus pca could be skipped for this assignment.
+
+
+
+#Preprocessing
+```{r warning=FALSE, message=FALSE}
+preprocessModel <-preProcess(training, method=c('knnImpute', 'center', 'scale'))
+pTrain <- predict(preprocessModel, training)
+pTrain$classe <- training$classe
+pTest <-predict(preprocessModel,testing)
+pTest$classe <- testing$classe
+```
+
+
+
+#Prediction candidates
+
+Three methods were used for prediction :Decision Tree, Random Forests, Gradient Boosting Method(gbm).For each candidate model, predictions are made agaist the cross-validation data set. Then, a confusion matrix is calculated and stored for each model for later reference.
+
+(1) Decision Tree
+```{r, message=FALSE, warning=FALSE, fig.cap="Decision tree"}
+mod_dt <- train(classe ~ ., data=pTrain, method="rpart",
+                trControl = trainControl(method = "cv", 
+                                         number = 4, 
+                                         allowParallel = TRUE, 
+                                         verboseIter = TRUE))
+fancyRpartPlot(mod_dt$finalModel)
+pred_dt <- predict(mod_dt, newdata = pTest)
+conf_dt <- confusionMatrix(pred_dt, pTest$classe)
+```
+
+
+(2) Random Forests
+```{r, message=FALSE, warning=FALSE, fig.cap="Random forests"}
+mod_rf <- train(classe ~ ., data = pTrain, method = 'rf', 
+                trControl = trainControl(method = "cv", 
+                                         number = 4, 
+                                         allowParallel = TRUE, 
+                                         verboseIter = TRUE))
+pred_rf <- predict(mod_rf, newdata = pTest)
+conf_rf <- confusionMatrix(pred_rf, pTest$classe)
+```
+
+
+(3) Gradient Boosting (gbm)
+```{r, message=FALSE, warning=FALSE, fig.cap="Random forests"}
+mod_gbm <- train(classe ~ ., data = pTrain, method = 'gbm', 
+                 trControl = trainControl(method = "cv", 
+                                          number = 4, 
+                                          allowParallel = TRUE))
+## 150 iterations were performed.
+pred_gbm <- predict(mod_gbm, newdata = pTest)
+conf_gbm <- confusionMatrix(pred_gbm, pTest$classe)
+```
+
+
+
+#Comparison of models
+```{r}
+conf_dt$overall[1]; conf_rf$overall[1]; conf_gbm$overall[1]
+```
+
+Taken together, the Random Forest model appears to be the most accurate, as expected.
+
+The out of sample error is the “error rate you get on new data set”, thus is calculated as 1 - accuracy for predictions made against the cross-validation set. 
+
+The accuracy of the model is 0.9949. The out of sample error is 0.0051. Considering that the test set is a sample size of 20, an accuracy rate well above 99% is sufficient to expect that few or none of the test samples will be mis-classified.
+
+
+
+#Applying Selected Model to Test Set
+
+```{r warning=FALSE, message=FALSE}
+#Same preprocessing
+testSet <- test_raw[,-1:-7]
+ptesting <- predict(preprocessModel, testSet)
+ptesting$problem_id <- testSet$problem_id #problem_id, not classe
+
+answers <- predict(mod_rf, ptesting)
+answers <- as.character(answers)
+
+# create function to write predictions to files
+pml_write_files <- function(x) {
+  n <- length(x)
+  for(i in 1:n) {
+    filename <- paste0("problem_id_", i, ".txt")
+    write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+  }
+}
+
+# create prediction files to submit
+pml_write_files(answers)
+answers
+```
