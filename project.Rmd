@@ -3,15 +3,12 @@ title: "Practical Machine Learning - Course Project"
 author: "Seok Joon Lee"
 date: '2019/3/31 '
 output:  
-  html_document: default
-  word_document:
-    keep_md: yes
   pdf_document: 
-    keep_md: yes
+  word_document:
+  html_document: default
   fig_caption: yes
   fig_height: 3
   fig_width: 4
- 
 ---
 
 #Background
