@@ -17,7 +17,6 @@ project.html: Project submission (html)
 
 project.docx: Project submission (docx)
 
-project.pdf: Project submission (pdf)
 
 
 README.md: This file
